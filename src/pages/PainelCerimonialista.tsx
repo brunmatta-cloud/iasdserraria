@@ -241,6 +241,7 @@ function PainelCerimonialista() {
         </div>
       )}
 
+      <div className="glass-card p-4">
         <div className="progress-bar h-2.5 rounded-full">
           <div
             className="progress-bar-fill rounded-full"
