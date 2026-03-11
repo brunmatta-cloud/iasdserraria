@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { Culto, MomentoProgramacao, ExecutionMode, MomentStatus } from '@/types/culto';
 import { calcularHorarioTermino } from '@/types/culto';
+import { useSyncState, type SyncState } from '@/hooks/useSyncState';
 
 interface CultoContextType {
   cultos: Culto[];
@@ -28,12 +29,22 @@ interface CultoContextType {
   pular: () => void;
   iniciarCulto: () => void;
   finalizarCulto: () => void;
+  restaurarCulto: () => void;
+  reiniciarCulto: () => void;
   getMomentStatus: (index: number) => MomentStatus;
   marcarChamado: (id: string) => void;
   addMomento: (m: MomentoProgramacao) => void;
   updateMomento: (m: MomentoProgramacao) => void;
   removeMomento: (id: string) => void;
   adjustCurrentMomentDuration: (deltaSeconds: number) => void;
+  // Cronometro sync fields
+  isBlinking: boolean;
+  toggleBlink: () => void;
+  setBlinking: (v: boolean) => void;
+  syncMessage: string;
+  setSyncMessage: (msg: string) => void;
+  syncShowMessage: boolean;
+  setSyncShowMessage: (v: boolean) => void;
 }
 
 const CultoContext = createContext<CultoContextType | null>(null);
@@ -77,7 +88,7 @@ const SAMPLE_MOMENTOS: Record<string, MomentoProgramacao[]> = {
 export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [cultos, setCultos] = useState<Culto[]>(SAMPLE_CULTOS);
   const [allMomentos, setAllMomentos] = useState<Record<string, MomentoProgramacao[]>>(SAMPLE_MOMENTOS);
-  const [activeCultoId, setActiveCultoId] = useState<string>(SAMPLE_CULTOS[0].id);
+  const [activeCultoId, setActiveCultoIdState] = useState<string>(SAMPLE_CULTOS[0].id);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('manual');
   const [isPaused, setIsPaused] = useState(false);
@@ -86,6 +97,10 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [timerStartedAt, setTimerStartedAt] = useState(0);
   const [displayElapsed, setDisplayElapsed] = useState(0);
   const [displayMomentElapsed, setDisplayMomentElapsed] = useState(0);
+  // Cronometro sync fields
+  const [isBlinking, setIsBlinking] = useState(false);
+  const [syncMessage, setSyncMessageState] = useState('');
+  const [syncShowMessage, setSyncShowMessageState] = useState(false);
 
   const rafRef = useRef<number>(0);
   const momentosRef = useRef<MomentoProgramacao[]>([]);
@@ -98,6 +113,7 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const doAvancarRef = useRef<() => void>(() => {});
   const activeCultoIdRef = useRef(activeCultoId);
   activeCultoIdRef.current = activeCultoId;
+  const syncLoadedRef = useRef(false);
 
   const safeCultos = Array.isArray(cultos) ? cultos : SAMPLE_CULTOS;
   const safeAllMomentos = (allMomentos && typeof allMomentos === 'object' && !Array.isArray(allMomentos)) ? allMomentos : SAMPLE_MOMENTOS;
@@ -114,6 +130,58 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const isRunning = culto.status === 'em_andamento' && !isPaused && currentIndex >= 0;
   isRunningRef.current = isRunning;
 
+  // ---- Sync with DB ----
+  const handleRemoteUpdate = useCallback((remote: SyncState) => {
+    if (remote.cultos.length > 0) setCultos(remote.cultos);
+    if (Object.keys(remote.allMomentos).length > 0) setAllMomentos(remote.allMomentos);
+    if (remote.activeCultoId) setActiveCultoIdState(remote.activeCultoId);
+    setCurrentIndex(remote.currentIndex);
+    setExecutionMode(remote.executionMode);
+    setIsPaused(remote.isPaused);
+    setElapsedBase(remote.elapsedSeconds);
+    setMomentElapsedBase(remote.momentElapsedSeconds);
+    // If remote says running, restart timer from saved base
+    if (!remote.isPaused && remote.currentIndex >= 0) {
+      setTimerStartedAt(Date.now());
+    } else {
+      setTimerStartedAt(0);
+    }
+    setIsBlinking(remote.isBlinking);
+    setSyncMessageState(remote.message);
+    setSyncShowMessageState(remote.showMessage);
+    syncLoadedRef.current = true;
+  }, []);
+
+  const { saveState } = useSyncState(handleRemoteUpdate);
+
+  // Save to DB whenever relevant state changes
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!syncLoadedRef.current) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      const { elapsed, momentElapsed } = computeElapsed();
+      saveState({
+        cultos: safeCultos,
+        allMomentos: safeAllMomentos,
+        activeCultoId,
+        currentIndex,
+        executionMode,
+        isPaused,
+        elapsedSeconds: elapsed,
+        momentElapsedSeconds: momentElapsed,
+        message: syncMessage,
+        showMessage: syncShowMessage,
+        isBlinking,
+      });
+    }, 400);
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
+  }, [cultos, allMomentos, activeCultoId, currentIndex, executionMode, isPaused, elapsedBase, momentElapsedBase, syncMessage, syncShowMessage, isBlinking]);
+
+  const setActiveCultoId = useCallback((id: string) => {
+    setActiveCultoIdState(id);
+  }, []);
+
   const computeElapsed = useCallback(() => {
     const startedAt = timerStartedAtRef.current;
     if (startedAt <= 0) {
@@ -122,7 +190,6 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         momentElapsed: Math.max(0, momentElapsedBaseRef.current),
       };
     }
-
     const now = Date.now();
     if (now < startedAt) {
       return {
@@ -130,7 +197,6 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         momentElapsed: Math.max(0, momentElapsedBaseRef.current),
       };
     }
-
     const delta = Math.floor((now - startedAt) / 1000);
     return {
       elapsed: Math.max(0, elapsedBaseRef.current + delta),
@@ -141,10 +207,8 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     let lastSecond = -1;
     let active = true;
-
     const tick = () => {
       if (!active) return;
-
       if (isRunningRef.current) {
         const startedAt = timerStartedAtRef.current;
         if (startedAt > 0) {
@@ -153,12 +217,10 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const delta = Math.floor((now - startedAt) / 1000);
             const elapsed = Math.max(0, elapsedBaseRef.current + delta);
             const momentElapsed = Math.max(0, momentElapsedBaseRef.current + delta);
-
             if (Math.floor(momentElapsed) !== lastSecond) {
               lastSecond = Math.floor(momentElapsed);
               setDisplayElapsed(elapsed);
               setDisplayMomentElapsed(momentElapsed);
-
               if (executionModeRef.current === 'automatico') {
                 const idx = currentIndexRef.current;
                 const moms = momentosRef.current;
@@ -176,15 +238,10 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       }
-
       rafRef.current = requestAnimationFrame(tick);
     };
-
     rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      active = false;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
+    return () => { active = false; if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, []);
 
   useEffect(() => {
@@ -220,16 +277,10 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const removeCulto = useCallback((id: string) => {
     setCultos((prev) => {
       const next = prev.filter((item) => item.id !== id);
-      if (activeCultoId === id && next.length > 0) {
-        setActiveCultoId(next[0].id);
-      }
+      if (activeCultoId === id && next.length > 0) setActiveCultoId(next[0].id);
       return next;
     });
-    setAllMomentos((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+    setAllMomentos((prev) => { const next = { ...prev }; delete next[id]; return next; });
   }, [activeCultoId]);
 
   const duplicateCulto = useCallback((id: string) => {
@@ -255,7 +306,6 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTimerStartedAt(Date.now());
         return prev + 1;
       }
-
       setCultos((prevCultos) => prevCultos.map((item) => {
         if (item.id !== activeCultoIdRef.current) return item;
         return { ...item, status: 'finalizado' as const };
@@ -270,11 +320,7 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const voltar = useCallback(() => {
     setCurrentIndex((prev) => {
-      if (prev > 0) {
-        setMomentElapsedBase(0);
-        setTimerStartedAt(Date.now());
-        return prev - 1;
-      }
+      if (prev > 0) { setMomentElapsedBase(0); setTimerStartedAt(Date.now()); return prev - 1; }
       return prev;
     });
   }, []);
@@ -312,6 +358,22 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCulto((current) => ({ ...current, status: 'finalizado' }));
     setIsPaused(true);
   }, [computeElapsed, setCulto]);
+
+  const restaurarCulto = useCallback(() => {
+    setCulto((current) => ({ ...current, status: 'em_andamento' }));
+    setIsPaused(true);
+    setTimerStartedAt(0);
+  }, [setCulto]);
+
+  const reiniciarCulto = useCallback(() => {
+    setMomentos((prev) => prev.map((m) => ({ ...m, chamado: false, duracaoOriginal: undefined })));
+    setCulto((current) => ({ ...current, status: 'planejado' }));
+    setCurrentIndex(-1);
+    setElapsedBase(0);
+    setMomentElapsedBase(0);
+    setTimerStartedAt(0);
+    setIsPaused(false);
+  }, [setCulto, setMomentos]);
 
   const getMomentStatus = useCallback((index: number): MomentStatus => {
     if (currentIndex < 0) return index === 0 ? 'proximo' : 'futuro';
@@ -353,48 +415,33 @@ export const CultoProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const updated = [...prev];
       const current = updated[currentIndex];
       const newDuracao = Math.max(0, current.duracao + deltaSeconds / 60);
-      updated[currentIndex] = {
-        ...current,
-        duracao: newDuracao,
-        duracaoOriginal: current.duracaoOriginal ?? current.duracao,
-      };
+      updated[currentIndex] = { ...current, duracao: newDuracao, duracaoOriginal: current.duracaoOriginal ?? current.duracao };
       return recalcStartTimes(updated, currentIndex + 1);
     });
   }, [currentIndex, setMomentos]);
 
+  const toggleBlink = useCallback(() => setIsBlinking((v) => !v), []);
+  const setBlinking = useCallback((v: boolean) => setIsBlinking(v), []);
+  const setSyncMessage = useCallback((msg: string) => setSyncMessageState(msg), []);
+  const setSyncShowMessage = useCallback((v: boolean) => setSyncShowMessageState(v), []);
+
   return (
     <CultoContext.Provider value={{
-      cultos,
-      addCulto,
-      updateCulto,
-      removeCulto,
-      duplicateCulto,
-      activeCultoId,
-      setActiveCultoId,
-      culto,
-      setCulto,
-      momentos,
-      allMomentos,
-      setMomentos,
-      currentIndex,
-      executionMode,
-      setExecutionMode,
+      cultos, addCulto, updateCulto, removeCulto, duplicateCulto,
+      activeCultoId, setActiveCultoId,
+      culto, setCulto, momentos, allMomentos, setMomentos,
+      currentIndex, executionMode, setExecutionMode,
       isPaused,
       elapsedSeconds: displayElapsed,
       momentElapsedSeconds: displayMomentElapsed,
-      avancar,
-      voltar,
-      pausar,
-      retomar,
-      pular,
-      iniciarCulto,
-      finalizarCulto,
-      getMomentStatus,
-      marcarChamado,
-      addMomento,
-      updateMomento,
-      removeMomento,
+      avancar, voltar, pausar, retomar, pular,
+      iniciarCulto, finalizarCulto, restaurarCulto, reiniciarCulto,
+      getMomentStatus, marcarChamado,
+      addMomento, updateMomento, removeMomento,
       adjustCurrentMomentDuration,
+      isBlinking, toggleBlink, setBlinking,
+      syncMessage, setSyncMessage,
+      syncShowMessage, setSyncShowMessage,
     }}>
       {children}
     </CultoContext.Provider>

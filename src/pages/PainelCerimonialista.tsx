@@ -4,7 +4,7 @@ import { StatusBadge } from '@/components/culto/StatusBadge';
 import { calcularHorarioTermino, type ExecutionMode, type MomentoProgramacao } from '@/types/culto';
 import {
   Play, Pause, SkipForward, SkipBack, FastForward, Users, Radio, Check,
-  Plus, Minus, Zap, ZapOff, Send, EyeOff, Timer, ExternalLink
+  Plus, Minus, Zap, ZapOff, Send, EyeOff, Timer, ExternalLink, RotateCcw, RefreshCw
 } from 'lucide-react';
 import { useMemo, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
@@ -53,6 +53,7 @@ function PainelCerimonialista() {
     culto, momentos, currentIndex, elapsedSeconds, momentElapsedSeconds,
     executionMode, setExecutionMode, isPaused,
     avancar, voltar, pausar, retomar, pular, iniciarCulto, finalizarCulto,
+    restaurarCulto, reiniciarCulto,
     getMomentStatus, marcarChamado, adjustCurrentMomentDuration,
   } = cultoData;
 
@@ -216,6 +217,29 @@ function PainelCerimonialista() {
           </p>
         </div>
       </div>
+
+      {safeCulto.status === 'finalizado' && (
+        <div className="glass-card p-4 sm:p-5">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">Culto Finalizado</h3>
+          <p className="text-sm text-muted-foreground mb-4">O culto foi finalizado. Voce pode restaurar para continuar de onde parou ou reiniciar completamente.</p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={restaurarCulto}
+              className="px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-colors flex items-center gap-2 text-sm"
+            >
+              <RotateCcw className="w-4 h-4" /> Restaurar Culto
+            </button>
+            <button
+              type="button"
+              onClick={reiniciarCulto}
+              className="px-4 py-2.5 rounded-lg bg-muted hover:bg-muted/80 transition-colors flex items-center gap-2 text-sm font-semibold"
+            >
+              <RefreshCw className="w-4 h-4" /> Reiniciar do Zero
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="glass-card p-4">
         <div className="progress-bar h-2.5 rounded-full">

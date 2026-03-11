@@ -23,6 +23,7 @@ export type Database = {
           elapsed_seconds: number
           execution_mode: string
           id: string
+          is_blinking: boolean
           is_paused: boolean
           message: string
           moment_elapsed_seconds: number
@@ -37,6 +38,7 @@ export type Database = {
           elapsed_seconds?: number
           execution_mode?: string
           id?: string
+          is_blinking?: boolean
           is_paused?: boolean
           message?: string
           moment_elapsed_seconds?: number
@@ -51,6 +53,7 @@ export type Database = {
           elapsed_seconds?: number
           execution_mode?: string
           id?: string
+          is_blinking?: boolean
           is_paused?: boolean
           message?: string
           moment_elapsed_seconds?: number

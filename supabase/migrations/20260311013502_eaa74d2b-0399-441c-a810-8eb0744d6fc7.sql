@@ -1,0 +1,1 @@
+ALTER TABLE public.culto_sync_state ADD COLUMN IF NOT EXISTS is_blinking boolean NOT NULL DEFAULT false;

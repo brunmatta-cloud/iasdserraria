@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, memo } from 'react';
+import { useCulto } from '@/contexts/CultoContext';
 
 interface CronometroContextType {
   timeAdjustment: number;
@@ -42,7 +43,6 @@ interface CronometroContextType {
 const STORAGE_KEY = 'culto-ao-vivo:cronometro-settings';
 
 const defaultSettings = {
-  isBlinking: false,
   orangeThreshold: 120,
   redThreshold: 20,
   topFontSize: 4,
@@ -56,21 +56,17 @@ const defaultSettings = {
   messageTextColor: '#ffffff',
   warningColor: '#f59e0b',
   dangerColor: '#ef4444',
-  message: '',
-  showMessage: false,
 };
 
 const isValidHexColor = (value: string) => /^#[0-9A-Fa-f]{6}$/.test(value);
 
 const readStoredState = () => {
   if (typeof window === 'undefined') return defaultSettings;
-
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw) as Partial<typeof defaultSettings>;
     return {
-      isBlinking: Boolean(parsed.isBlinking),
       orangeThreshold: typeof parsed.orangeThreshold === 'number' ? Math.max(10, Math.min(600, parsed.orangeThreshold)) : defaultSettings.orangeThreshold,
       redThreshold: typeof parsed.redThreshold === 'number' ? Math.max(5, Math.min(300, parsed.redThreshold)) : defaultSettings.redThreshold,
       topFontSize: typeof parsed.topFontSize === 'number' ? Math.max(1.25, Math.min(8, parsed.topFontSize)) : defaultSettings.topFontSize,
@@ -84,8 +80,6 @@ const readStoredState = () => {
       messageTextColor: isValidHexColor(parsed.messageTextColor || '') ? parsed.messageTextColor! : defaultSettings.messageTextColor,
       warningColor: isValidHexColor(parsed.warningColor || '') ? parsed.warningColor! : defaultSettings.warningColor,
       dangerColor: isValidHexColor(parsed.dangerColor || '') ? parsed.dangerColor! : defaultSettings.dangerColor,
-      message: typeof parsed.message === 'string' ? parsed.message : defaultSettings.message,
-      showMessage: Boolean(parsed.showMessage),
     };
   } catch (error) {
     console.error('Falha ao ler configuracoes do cronometro:', error);
@@ -96,6 +90,7 @@ const readStoredState = () => {
 const CronometroContext = createContext<CronometroContextType | null>(null);
 
 export const CronometroProvider: React.FC<{ children: React.ReactNode }> = memo(({ children }) => {
+  const { isBlinking, toggleBlink, setBlinking, syncMessage, setSyncMessage, syncShowMessage, setSyncShowMessage } = useCulto();
   const [timeAdjustment, setTimeAdjustment] = useState(0);
   const [state, setState] = useState(readStoredState);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,10 +100,7 @@ export const CronometroProvider: React.FC<{ children: React.ReactNode }> = memo(
     saveTimeoutRef.current = setTimeout(() => {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }, 80);
-
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    };
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [state]);
 
   const updateState = useCallback((patch: Partial<typeof defaultSettings>) => {
@@ -117,39 +109,22 @@ export const CronometroProvider: React.FC<{ children: React.ReactNode }> = memo(
 
   const addTime = useCallback((seconds: number) => setTimeAdjustment((prev) => prev + seconds), []);
   const resetAdjustment = useCallback(() => setTimeAdjustment(0), []);
-  const toggleBlink = useCallback(() => updateState({ isBlinking: !state.isBlinking }), [state.isBlinking, updateState]);
-  const setBlinking = useCallback((value: boolean) => updateState({ isBlinking: value }), [updateState]);
-  const setMessage = useCallback((msg: string) => updateState({ message: msg }), [updateState]);
-  const setShowMessage = useCallback((value: boolean) => updateState({ showMessage: value }), [updateState]);
-  const setOrangeThreshold = useCallback((seconds: number) => updateState({ orangeThreshold: seconds }), [updateState]);
-  const setRedThreshold = useCallback((seconds: number) => updateState({ redThreshold: seconds }), [updateState]);
-  const setTopFontSize = useCallback((size: number) => updateState({ topFontSize: size }), [updateState]);
-  const setBottomFontSize = useCallback((size: number) => updateState({ bottomFontSize: size }), [updateState]);
-  const setTimerFontSize = useCallback((size: number) => updateState({ timerFontSize: size }), [updateState]);
-  const setMessageFontSize = useCallback((size: number) => updateState({ messageFontSize: size }), [updateState]);
-  const setBackgroundColor = useCallback((color: string) => updateState({ backgroundColor: color }), [updateState]);
-  const setTimerTextColor = useCallback((color: string) => updateState({ timerTextColor: color }), [updateState]);
-  const setTopTextColor = useCallback((color: string) => updateState({ topTextColor: color }), [updateState]);
-  const setBottomTextColor = useCallback((color: string) => updateState({ bottomTextColor: color }), [updateState]);
-  const setMessageTextColor = useCallback((color: string) => updateState({ messageTextColor: color }), [updateState]);
-  const setWarningColor = useCallback((color: string) => updateState({ warningColor: color }), [updateState]);
-  const setDangerColor = useCallback((color: string) => updateState({ dangerColor: color }), [updateState]);
 
   const value = React.useMemo<CronometroContextType>(() => ({
     timeAdjustment,
     addTime,
     resetAdjustment,
-    isBlinking: state.isBlinking,
+    isBlinking,
     toggleBlink,
     setBlinking,
-    message: state.message,
-    setMessage,
-    showMessage: state.showMessage,
-    setShowMessage,
+    message: syncMessage,
+    setMessage: setSyncMessage,
+    showMessage: syncShowMessage,
+    setShowMessage: setSyncShowMessage,
     orangeThreshold: state.orangeThreshold,
     redThreshold: state.redThreshold,
-    setOrangeThreshold,
-    setRedThreshold,
+    setOrangeThreshold: (s: number) => updateState({ orangeThreshold: s }),
+    setRedThreshold: (s: number) => updateState({ redThreshold: s }),
     topFontSize: state.topFontSize,
     bottomFontSize: state.bottomFontSize,
     timerFontSize: state.timerFontSize,
@@ -161,40 +136,18 @@ export const CronometroProvider: React.FC<{ children: React.ReactNode }> = memo(
     messageTextColor: state.messageTextColor,
     warningColor: state.warningColor,
     dangerColor: state.dangerColor,
-    setTopFontSize,
-    setBottomFontSize,
-    setTimerFontSize,
-    setMessageFontSize,
-    setBackgroundColor,
-    setTimerTextColor,
-    setTopTextColor,
-    setBottomTextColor,
-    setMessageTextColor,
-    setWarningColor,
-    setDangerColor,
-  }), [
-    timeAdjustment,
-    addTime,
-    resetAdjustment,
-    state,
-    toggleBlink,
-    setBlinking,
-    setMessage,
-    setShowMessage,
-    setOrangeThreshold,
-    setRedThreshold,
-    setTopFontSize,
-    setBottomFontSize,
-    setTimerFontSize,
-    setMessageFontSize,
-    setBackgroundColor,
-    setTimerTextColor,
-    setTopTextColor,
-    setBottomTextColor,
-    setMessageTextColor,
-    setWarningColor,
-    setDangerColor,
-  ]);
+    setTopFontSize: (s: number) => updateState({ topFontSize: s }),
+    setBottomFontSize: (s: number) => updateState({ bottomFontSize: s }),
+    setTimerFontSize: (s: number) => updateState({ timerFontSize: s }),
+    setMessageFontSize: (s: number) => updateState({ messageFontSize: s }),
+    setBackgroundColor: (c: string) => updateState({ backgroundColor: c }),
+    setTimerTextColor: (c: string) => updateState({ timerTextColor: c }),
+    setTopTextColor: (c: string) => updateState({ topTextColor: c }),
+    setBottomTextColor: (c: string) => updateState({ bottomTextColor: c }),
+    setMessageTextColor: (c: string) => updateState({ messageTextColor: c }),
+    setWarningColor: (c: string) => updateState({ warningColor: c }),
+    setDangerColor: (c: string) => updateState({ dangerColor: c }),
+  }), [timeAdjustment, addTime, resetAdjustment, isBlinking, toggleBlink, setBlinking, syncMessage, setSyncMessage, syncShowMessage, setSyncShowMessage, state, updateState]);
 
   return <CronometroContext.Provider value={value}>{children}</CronometroContext.Provider>;
 });
