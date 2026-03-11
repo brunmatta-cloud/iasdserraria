@@ -4,7 +4,7 @@ import { StatusBadge } from '@/components/culto/StatusBadge';
 import { calcularHorarioTermino, type ExecutionMode, type MomentoProgramacao } from '@/types/culto';
 import {
   Play, Pause, SkipForward, SkipBack, FastForward, Users, Radio, Check,
-  Plus, Minus, Zap, ZapOff, Send, EyeOff, Timer, ExternalLink
+  Plus, Minus, Zap, ZapOff, Send, EyeOff, Timer, ExternalLink, RotateCcw, RefreshCw
 } from 'lucide-react';
 import { useMemo, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
