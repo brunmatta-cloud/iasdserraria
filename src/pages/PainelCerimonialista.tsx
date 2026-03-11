@@ -53,6 +53,7 @@ function PainelCerimonialista() {
     culto, momentos, currentIndex, elapsedSeconds, momentElapsedSeconds,
     executionMode, setExecutionMode, isPaused,
     avancar, voltar, pausar, retomar, pular, iniciarCulto, finalizarCulto,
+    restaurarCulto, reiniciarCulto,
     getMomentStatus, marcarChamado, adjustCurrentMomentDuration,
   } = cultoData;
 
